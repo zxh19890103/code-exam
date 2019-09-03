@@ -1,13 +1,16 @@
 const mysql = require('mysql')
 const sqlFormatter = require('sql-formatter')
+const ConnectionException = require('../exception/ConnectionException')
 
 function get_connection(){
   return mysql.createPool({
-    connectionLimit: 10,
+    connectionLimit: 100,
     host: process.env.DB_HOST,
     user: process.env.DB_USER,
     password: process.env.DB_PASSWD,
     port: 3306,
+    connectTimeout : process.env.DB_CONN_TIMEOUT || 500,
+    waitForConnections : false,
     database: process.env.DB_NAME
   })
 }
@@ -23,6 +26,7 @@ class Db{
   async insert(tbl, data, conn = null) {
     const sql = `insert into ${tbl} set ?`
     const result = await this.query(sql, data, conn)
+
     return result.insertId
 
   }
@@ -137,7 +141,10 @@ class Db{
     return new Promise((resolve, reject) => {
       function __query(connection, sql, params) {
         connection.query(sql, params, (error, results, fields) => {
-          connection.release()
+          // console.log('release-a-connection')
+          if(!conn) {
+            connection.release()
+          }
           if (error) {
             console.log(sqlFormatter.format(sql))
             reject(error)
@@ -146,11 +153,14 @@ class Db{
         })
       }
       if (conn) {
-        __query(connection, sql, params)
+        __query(conn, sql, params)
       } else {
+        // console.log('get-a-connection')
         Db.pool.getConnection(function (err, connection) {
           if (err) {
-            throw err
+            console.error(err)
+            reject(new ConnectionException(err))
+            return
           }
           __query(connection, sql, params)
         })

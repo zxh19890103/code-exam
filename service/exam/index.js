@@ -6,6 +6,7 @@ const Exam = require('./dao/exam')
 const token = require('../lib/util/token.middleware')
 const LogicException = require('../lib/exception/LogicException')
 const LoginException = require('../lib/exception/LoginException')
+const Comment = require('./dao/comment')
 
 const request_lock = require('../lib/util/request_lock')
 /**
@@ -22,12 +23,46 @@ function register(app){
 
     const validator = new Validator(req.query)
     validator.check('name', 'required', '需要传入试题名称')
-    validator.check('name', /[a-z-]{3,20}/, '试题格式不正确')
+    validator.check('name', /^[0-9a-z-]{3,20}$/, '试题格式不正确')
     validator.validate()
 
     const exam = new Exam()
-    const result = await exam.load(req.query.name, req.student.student_id)
+    const result = await exam.load(req.query.name, req.student.student_id, req.student.account_id)
     res.send(result)
+  }))
+
+  app.get('/paper/:name/explain', token, api_wrapper(async (req, res) => {
+
+    if(!req.student) {
+      throw new LoginException()
+    }
+
+    const validator = new Validator(req.params)
+    validator.check('name', 'required', '需要传入试题名称')
+    validator.check('name',  /^[0-9a-z-]{3,20}$/, '试题格式不正确')
+    validator.validate()
+
+    const exam = new Exam()
+    const results = await exam.explains(req.params.name)
+    res.send(results)
+  }))
+
+  app.get('/paper/:name/explain/:id', token, api_wrapper(async (req, res) => {
+    if(!req.student) {
+      throw new LoginException()
+    }
+
+    const validator = new Validator(req.params)
+    validator.check('name', 'required', '需要传入试题名称')
+    validator.check('name',  /^[0-9a-z-]{3,20}$/, '试题格式不正确')
+    validator.check('id', 'required', '需要传入id')
+    validator.check('id', 'integer', 'id应当是整数')
+    validator.validate()
+
+    const exam = new Exam()
+    const results = await exam.explain(req.params.name, req.params.id)
+    res.send(results)
+
   }))
 
 
@@ -40,9 +75,9 @@ function register(app){
     request_lock(req.student.student_id + '-submit', 10000)
     const validator = new Validator(req.body)
     validator.check('exam', 'required', '需要传入试题名称')
-    validator.check('exam', /[a-z-]{3,20}/, '试题格式不正确')
-    validator.check('index', 'required', '需要题目序号')
-    validator.check('index', /\d+/, '题目需要格式不正确')
+    validator.check('exam', /^[0-9a-z-]{3,20}$/, '试题格式不正确')
+    validator.check('question_id', 'required', '需要题目id')
+    validator.check('question_id', /\d+/, '题目id格式不正确')
     validator.check('code', 'required', '需要代码')
     validator.check('code', 'len', '答案不能超过2000个字符', {
       max : 2000
@@ -69,6 +104,29 @@ function register(app){
     await exam.submit(req.body, req.student.student_id)
     res.send({success : 1})
   }))
+
+  app.get('/paper/:name/answer', token, api_wrapper(async (req, res) => {
+
+    const validator = new Validator(req.params)
+    validator.check('name', 'required', '需要传入试题名称')
+    validator.check('name',  /^[0-9a-z-]{3,20}$/, '试题格式不正确')
+    validator.validate()
+
+    const exam = new Exam()
+    const list = await exam.answers(req.params.name)
+    res.send(list)
+  }))
+
+  app.post('/submit/:id/applaud', token, api_wrapper(async (req, res) => {
+    const validator = new Validator(req.params)
+    validator.check('id', 'required', '需要传入id')
+    validator.check('id', 'integer', 'id格式不正确')
+    validator.validate()
+    const comment = new Comment()
+    const v = await comment.applaud(req.params.id, req.student.account_id) 
+    res.send({v})
+  }))
+
 }
 
 

@@ -71,7 +71,12 @@ class Account {
     }
 
     await this.db.update('account', {status : 1, id : account_id})
+  }
 
+  update(info, student_id) {
+    info.id = student_id
+    console.log(info)
+    return this.db.update('student', info)
   }
 
   async login(verify, token_code) {
@@ -79,6 +84,10 @@ class Account {
     const account = await this.db.queryOne(sql, [verify.email])
     if (!account) {
       throw new LogicException('用户不存在')
+    }
+
+    if(account.status !== 1) {
+      throw new LogicException('请先激活')
     }
 
     const verify_pass = md5(verify.password + account.salt) === account.password
@@ -110,16 +119,12 @@ class Account {
       return {}
     }
 
-    const sql_user = `select A.id as student_id, B.id as account_id,A.name, B.status from student as A
+    const sql_user = `select A.id as student_id, A.nickname, A.email, B.id as account_id,A.name, B.status, A.avatar, A.intro from student as A
       left join account as B
       on A.account_id = B.id
-      where B.id = ${token.account_id} 
+      where B.id = ${token.account_id}
     `
     const student = await this.db.queryOne(sql_user)
-    if(student && student.status !== 1) {
-      console.log(student)
-      throw 'not-activation' 
-    }
     return {student,token}
   }
 

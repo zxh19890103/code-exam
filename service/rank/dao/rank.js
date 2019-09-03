@@ -6,8 +6,10 @@ const LogicException = require('../../lib/exception/LogicException')
 const MaxHeap = require('./heap')
 
 
-function sum(list) {
-  return list.reduce((x, y) => x + y, 0)
+function sum(obj) {
+  return Object.values(obj).reduce((x, y) => {
+    return x + y
+  }, 0)
 }
 
 function hide(email) {
@@ -21,88 +23,235 @@ function hide(email) {
 class Rank {
   constructor(){
     this.db = new Db()
+    this.max_id = -1
+    this.max_applaud_id = -1
+
+    // 根据考试的分数排名
+    this.ranks = {}
+    this.rank_by_weight = {}
+
+    // 根据题目排名
+    this.quest_heaps = {}
+
+    this.submit_applauds = {}
   }
 
   /**
    * 对一次回答进行打分
    */
   score(real_exe_time, refer_exe_time, min_score, correct, weight){
+
     if(!correct) {return 0}
+    if(min_score === 100) {return weight}
+    const lg_real = Math.log2(real_exe_time)
+    const lg_refer = Math.log2(refer_exe_time)
+
+    let diff = lg_refer - lg_real
+
+    let addScore = 0
+    if(diff > 0) {
+      addScore += diff * 14
+    }
+
+    let score = min_score + (addScore  / 2)
     weight = weight / 100
-    const s = 100 * ( real_exe_time < refer_exe_time ? 1 : refer_exe_time / real_exe_time )
-    const score = Math.max(s, min_score) * weight
-    return score
+    // console.log('score', diff, refer_exe_time, real_exe_time, score)
+    return score * weight
   }
 
 
-  /**
-   * 给试卷进行排名和打分 
-   * @param {*} name 
-   */
-  async buildRank(name){
-    const maxHeap = new MaxHeap(
-      (a, key) => a.score = key,
-      a => a.score
-    )
-    const dir = path.resolve(__dirname, '../../../exams', name)
-    if(!fs.existsSync(dir)) {
-      throw new LogicException('试卷不存在')
+  async loadExamConfs() {
+
+    const sql = `select A.question_id, B.name, A.min_score, A.ref_time, A.weight from exam_question A
+      left join exam B
+      on B.id = A.exam_id
+    `
+    const items = await this.db.query(sql)
+    const conf = {}
+
+    for(let i = 0; i < items.length; i++) {
+      const {name, min_score, ref_time, weight, question_id} = items[i]
+
+      if(!conf[name]) {
+        conf[name] = {
+          count : 0,
+          scores : {}
+        }
+      }
+
+      conf[name].scores[question_id] = {
+        min_score,
+        ref_time,
+        weight
+      }
+      conf[name].count ++
     }
-    const files = fs.readdirSync(dir)
-    const count = files.filter(x => x.match(/\.md$/)).length
-    const scores = require(path.resolve(dir, 'scores.config.js'))
+    return conf
+  }
+
+  async updateQuestionRank(){
+    const exam_names = ( await this.db.query(`select distinct(exam) from submit`) ).map(x => x.exam)
 
     const sql = `
-      select A.student_id, A.status, A.question, A.exe_time,B.email, B.nickname
+      select A.id, A.exam, A.code, A.student_id, A.status, A.question, A.exe_time,B.email, B.nickname,B.avatar
       from submit A
       left join student B
       on A.student_id = B.id
-      where exam=? and status>=2
+      where status=2 and A.id > ${this.max_id}
+      order by id desc
     `
-    const submits = await this.db.query(sql, [name])
-    console.log(`${submits.length} submit found`)
-    let users = {}
-
-    // 计算所有学生的总分
-    for(let i = 0; i < submits.length ; i++) {
-      const {student_id, question , status, exe_time, nickname, email}= submits[i]
-      // 初始化为0分
-      if(!users[student_id]) {
-        users[student_id] = {
-          nickname,
-          email : hide(email),
-          scores : Array(count).fill(0),
-          total : 0
-        }
-      }
-      // 对当前submit打分
-      const index = question
-      const score = this.score(
-        exe_time,
-        scores[index].exe_time,
-        scores[index].min_score,
-        status === 2,
-        scores[index].weight
-      )
-      if (users[student_id].scores[index] < score) {
-        users[student_id].scores[index] = score
-        users[student_id].total = sum(users[student_id].scores) 
-      }
-
+    let submits = await this.db.query(sql)
+    if(submits.length > 0) {
+      this.max_id = submits[0].id
     }
 
-    // 数据放到maxHeap中
-    Object.keys(users).forEach(student_id => {
-      const user = users[student_id]
-      maxHeap.add({
-        name : user.nickname,
-        email : user.email,
-        score : user.total
+    /**
+     * 给submits计算分数
+     */
+    submits = submits.map( submit => {
+      const conf = this.conf[submit.exam]
+      if(!conf) {return submit}
+      const {scores} = conf
+      const {ref_time, min_score, weight} = scores[submit.question]
+      submit.score = this.score(submit.exe_time, ref_time, min_score, submit.status === 2, weight)
+      return submit
+    }).filter(x => x.score)
+
+    const group_by_questions = R.groupBy(submit => {
+      return submit.exam + '-' + submit.question
+    })(submits)
+
+    Object.keys(group_by_questions).forEach(k_exam_quest=> {
+      const submitsForQuestion = group_by_questions[k_exam_quest]
+
+      // 根据用户分组计算最高分
+      const group_by_users = R.groupBy(submit => {
+        return submit.student_id
+      })(submitsForQuestion)
+
+      Object.keys(group_by_users).forEach(key => {
+        const userSubmits = group_by_users[key]
+
+        // 取最后一次提交为最终成绩
+        const lastSubmit = userSubmits[0]
+
+        if(!this.quest_heaps[k_exam_quest]) {
+          this.quest_heaps[k_exam_quest] = new MaxHeap(
+            (x, key) => x.score = key,
+            x => x.score,
+            x => x.question + '--' + x.student_id
+          )
+        }
+
+        // 处理全量和增量的关系
+        if(!this.quest_heaps[k_exam_quest].contains(lastSubmit)) {
+          this.quest_heaps[k_exam_quest].add(lastSubmit)
+        } else {
+          const item = this.quest_heaps[k_exam_quest].getHeapItem(lastSubmit)
+          if(item.score < lastSubmit.score) {
+            this.quest_heaps[k_exam_quest].increase(lastSubmit, lastSubmit.score)
+          } else  {
+            this.quest_heaps[k_exam_quest].delete(lastSubmit)
+            this.quest_heaps[k_exam_quest].add(lastSubmit)
+
+          }
+        }
       })
     })
-    return maxHeap
+
+
   }
 
+  /**
+   * 更新点赞
+   */
+  async updateApplaud() {
+    const sql = `select * from submit_applaud where \`update\` > ${this.max_applaud_id} order by \`update\` desc`
+    const applauds = await this.db.query(sql)
+    if(applauds.length > 0) {
+      this.max_applaud_id = applauds[0].update
+    }
+    applauds.forEach( ({submit_id, applaud}) => {
+      if(!this.submit_applauds[submit_id]) {
+        this.submit_applauds[submit_id] = applaud
+        return
+      }
+      if(applaud) {
+        this.submit_applauds[submit_id]++
+      } else {
+        this.submit_applauds[submit_id]--
+      }
+
+    })
+  }
+
+  async buildRank() {
+    try {
+
+      this.conf = await this.loadExamConfs()
+      await this.updateApplaud()
+      await this.updateQuestionRank()
+
+      for (let key in this.quest_heaps) {
+        this.ranks[key] = this.quest_heaps[key].getSorted()
+
+        this.rank_by_weight[key] = [...this.ranks[key]]
+          .sort((x, y) => {
+            const ay = this.submit_applauds[y.id] || 0
+            const ax = this.submit_applauds[x.id] || 0
+            return (y.score - x.score) * 10 + (ay - ax) * 10
+          })
+      }
+
+    }catch(ex) {
+      console.error(ex)
+    }
+  }
+
+  getQuestions(name, question_id, offset, limit){
+    const key = name + '-' + question_id
+    if(!this.rank_by_weight[key]) {
+      return []
+    }
+    return this.rank_by_weight[key].slice(offset, offset + limit)
+      .map(x => {
+        x.applauds = this.submit_applauds[x.id] || 0
+        return x
+      })
+  }
+
+  getExam(name) {
+
+    const conf = this.conf[name]
+    if(!conf) {
+      return []
+    }
+    const users = {}
+    const questions = Object.keys(conf.scores).forEach(question_id => {
+      const submits = this.ranks[name + '-' + question_id]
+      if(!submits) {
+        return
+      }
+      submits.forEach(submit => {
+        if(!users[submit.student_id]) {
+          if(!submit.email) {
+            return
+          }
+          users[submit.student_id] = {
+            email : hide(submit.email),
+            avatar : submit.avatar,
+            name : submit.nickname,
+            score : 0
+          }
+        }
+        users[submit.student_id].score += submit.score
+      })
+    })
+
+    return Object.keys(users).map(id => {
+      return users[id]
+    }).sort((x, y) => y.score - x.score)
+  }
 }
 
-module.exports = Rank 
+module.exports = Rank

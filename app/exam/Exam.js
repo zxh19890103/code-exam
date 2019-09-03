@@ -1,13 +1,13 @@
 import React, { Component } from 'react'
 
 import { Button, message } from 'antd'
-import request from '../lib/request'
+import request from '../common/util/request'
 import Timer from './Timer'
 import Rank from './Rank'
-import {tract_submit, tract_view_paper} from '../lib/tract'
+import {tract_submit, tract_view_paper} from '../common/util/tract'
+import {Link} from 'react-router-dom'
 
-@withExam()
-export default class Exam extends Component {
+export default @withExam() class Exam extends Component {
 
   constructor(){
     super()
@@ -18,7 +18,7 @@ export default class Exam extends Component {
   componentDidMount(){
 
     // Question比较大，包括markdown-it和codemirror两个大库
-    // 使用Dynamic import访问 
+    // 使用Dynamic import访问
     import('./Question').then(Question => {
       this.setState({
         QuestionComponent : Question.default
@@ -28,7 +28,14 @@ export default class Exam extends Component {
   render() {
     return <div className='paper'>
       <Rank exam={this.props.name} />
-      <h1>{this.props.title}<Timer left={this.props.left} /></h1>
+      <h1>{this.props.title}
+        <div className='timer-w'>
+          <Timer permanent={this.props.permanent} left={this.props.left} tillstart={this.props.tillstart} />
+        </div>
+      </h1>
+
+      <FloatMenu name={this.props.name} />
+
 
       {this.state.QuestionComponent && this.props.questions.map( (question, i) => {
         const { QuestionComponent } = this.state
@@ -41,6 +48,21 @@ export default class Exam extends Component {
 }
 
 
+class FloatMenu extends Component{
+
+  render(){
+    return <div className='float-menu'>
+      <div className='item'>
+        <Link to={'/exam/' + this.props.name + '/explain'}>试卷的解读</Link>
+      </div>
+       <div className='item'>
+        <Link to={'/exam/' + this.props.name + '/answer'}>大家的回答</Link>
+      </div>
+
+    </div>
+  }
+}
+
 
 function withExam() {
 
@@ -49,7 +71,7 @@ function withExam() {
     class ExamProxy extends Component {
       constructor(props) {
         super()
-        this.name = location.pathname.split('/').pop()
+        this.name = props.match.params.name
         this.state = {
           exam : null,
           error : null

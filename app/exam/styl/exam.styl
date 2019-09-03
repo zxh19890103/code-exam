@@ -1,23 +1,28 @@
 .paper
-  background-color #f2f3f2
+  background-color white
   margin 40Px auto
   border-radius 10px
   width 800px
   padding-top 30Px
   h1
     text-align center
-    margin 0px 50px
     color #333
-    border-bottom 2px solid #ddd
+    font-size 48px
+    border-bottom 2px solid #f7f016
+    padding 0 0 20px 0
 
 .question
   padding 20px
-  border-bottom 1px solid #ccc
-  &:last-child
-    border none
+  border 5px solid #fffedf
+  margin-top 80px
 
-.timer
-  display block
+.CodeMirror
+  border 1px solid #f2f3f4
+.console
+  height 200px
+  background #333
+  color yellow
+.timer-w
   color #aaa
   font-size 16px
   margin-left 10Px
@@ -25,5 +30,45 @@
 .answer
   color #009900
   padding-top 5Px
-
+.md
+  code
+    font-weight bold
+  pre
+    background-color #f2f3f3
+    padding 7px 10px
+    border-radius: 3px
+    code
+      font-weight normal
+.papers
+  font-size 14Px
+  .paper-item
+    margin-bottom 10Px
 @import './rank.styl'
+
+.answer-card
+  border #befff0 1px dashed 
+  padding 10px
+  margin-bottom 20px
+  .like
+    color #b58e2b
+    display flex
+    align-items center
+    justify-content center
+    width 80px
+    background: #feffad
+    padding 3px 10px
+    border-radius 2px
+    cursor pointer
+    &:hover
+      background: darken(#feffad, 10)
+    svg
+      fill #b58e2b
+  .person
+    img 
+      width 32px
+      height 32px
+      border-radius 16px
+      margin-right 20px
+    padding 10px
+    display flex
+    align-items center

@@ -4,6 +4,9 @@
 ```
 ├── app
 │   ├── exam 考试系统前端
+│   ├── inpire 创作平台项目
+│   ├── account 账户服务
+│   ├── my 个人中心
 │   └── lib  通用工具
 ├── dist -- 静态资源上线发布
 │   └── exam
@@ -16,6 +19,7 @@
 └── service 服务
     ├── account 账户服务
     ├── exam 考试服务
+    ├── my 个人信息服务
     ├── executor 执行器和验证器
     ├── lib 公用库
     └── server web服务
@@ -65,54 +69,32 @@ classnames - 类名解析
 - DB_USER 数据用户
 - DB_PASSWD 数据库密码
 - DB_NAME 数据库名称
+- EXAM_DIR 考试服务地址
 
 
 ### 开发配置
 
+#### 安装依赖
 ```
-# 安装依赖
 yarn
+```
 
-# 生成建表语句
-node service/lib/db/createdb.js
+#### 数据库安装和建表
+```
+# 安装mysql过程（略）
 
-# 安装mysql然后创建数据库
-# 按照 sql目录下文件字典顺序执行sql，比如先执行 0000001.sql
-cat sql/000001.sql | mysql -uuser -p 
+# 建表:按照 sql目录下文件字典顺序执行sql，比如先执行 0000001.sql
+cat sql/000001.sql | mysql -uuser -p
+```
+
+#### HOST配置
+127.0.0.1 www.weavinghorse.test
+
+#### nginx配置
+见[nginx配置](/scripts/nginx/www.weavinghorse.test.conf)
 
 
-# /etc/hosts
-127.0.0.1 www.weavinghorse.test 
-
-# 开发nginx配置
-server {
-  server_name www.weavinghorse.test;
-  listen 80;
-
-  location / {
-    proxy_pass http://localhost:8000;
-  }
-
-  location /api/account/ {
-    proxy_pass http://localhost:8001/;
-  }
-
-  location /api/exam/ {
-    proxy_pass http://localhost:8002/;
-  }
-
-  location /api/rank/ {
-    proxy_pass http://localhost:8004/;
-  }
-
-}
-
-# 执行
-# 执行4个服务
-pm2 start process.config.js
-
-# 程序验证器开启
-# sh ./run_executor.sh
-
-# web端
+#### 启动任务
+```
 npm start
+```

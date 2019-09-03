@@ -3,3 +3,5 @@ node_modules
 yarn*
 package-lock*
 dist/
+!exams/test
+upload/*
